@@ -14,12 +14,15 @@ import os
 from pathlib import Path
 import re
 import sys
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 import xml.etree.ElementTree as ET
 
 import feedparser
 import requests
 import trafilatura
+from lxml import etree, html as lxml_html
+
+from news_images import dedupe_images, html_images, normalize_image_url, rss_images
 
 ROOT = Path(__file__).resolve().parent
 BJT = timezone(timedelta(hours=8))
@@ -74,7 +77,7 @@ def entry_time(entry, source=None):
     return None, "missing"
 
 
-def fetch_bytes(url, timeout):
+def fetch_bytes(url, timeout, *, with_date=False):
     if not http_url(url):
         raise ValueError("invalid_url")
     with request_session(url) as session, session.get(url, headers=HEADERS, timeout=(8, timeout), stream=True) as response:
@@ -85,7 +88,8 @@ def fetch_bytes(url, timeout):
             if size > 6_000_000:
                 raise ValueError("response_too_large")
             chunks.append(chunk)
-        return b"".join(chunks), response.url
+        result = (b"".join(chunks), response.url)
+        return (*result, response.headers.get("Date")) if with_date else result
 
 
 def request_session(url):
@@ -114,6 +118,42 @@ def error_label(exc):
     return type(exc).__name__
 
 
+def jiemian_list_time(raw, anchor):
+    """Official channel cards show Beijing dates to the minute, not fetch times."""
+    raw = plain(raw)
+    match = re.fullmatch(r"(今天|昨天)\s*(\d{1,2}):(\d{2})", raw)
+    if match:
+        day = anchor - timedelta(days=1 if match[1] == "昨天" else 0)
+        return day.replace(hour=int(match[2]), minute=int(match[3]), second=0, microsecond=0)
+    match = re.fullmatch(r"(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})", raw)
+    if match:
+        month, day, hour, minute = map(int, match.groups())
+        year = anchor.year - int((month, day) > (anchor.month, anchor.day))
+        return datetime(year, month, day, hour, minute, tzinfo=BJT)
+    return None
+
+
+def parse_jiemian_list(data, source_url, anchor):
+    """Read public first-party business/finance cards; no third-party full-text feed."""
+    document = lxml_html.fromstring(data)
+    cards = document.xpath("//li[contains(concat(' ', normalize-space(@class), ' '), ' card-list ')]")
+    if not cards:
+        raise ValueError("jiemian_channel_cards_missing")
+    entries = []
+    for card in cards:
+        links = card.xpath(".//div[contains(@class, 'card-list__content')]/a/@href")
+        titles = card.xpath(".//h3[contains(@class, 'card-list__title')]//text()")
+        if not links or not titles:
+            continue
+        raw = plain(" ".join(card.xpath(".//span[contains(@class, 'news-footer__date')]/text()")))
+        stamp = jiemian_list_time(raw, anchor)
+        entries.append({"title": plain(" ".join(titles)), "link": urljoin(source_url, links[0]),
+                        "summary": plain(" ".join(card.xpath(".//div[contains(@class, 'card-list__summary')]//p//text()"))),
+                        "published": raw, "published_parsed": stamp.utctimetuple() if stamp else None,
+                        "time_basis": "jiemian_channel_display_BJT", "time_precision": "minute"})
+    return feedparser.FeedParserDict(version="jiemian_html", bozo=False, entries=entries)
+
+
 def fetch_feed(source, now, cfg):
     report = {"name": source["name"], "url": source.get("url", ""), "enabled": source.get("enabled", True),
               "note": source.get("note", ""), "status": "disabled", "total": 0, "in_window": 0,
@@ -121,8 +161,24 @@ def fetch_feed(source, now, cfg):
     if not report["enabled"]:
         return [], report
     try:
-        data, _ = fetch_bytes(source["url"], cfg["request_timeout_seconds"])
-        parsed = feedparser.parse(data)
+        if source.get("format") == "jiemian_html":
+            data, final_url, response_date = fetch_bytes(source["url"], cfg["request_timeout_seconds"], with_date=True)
+            anchor = parsedate_to_datetime(response_date).astimezone(BJT) if response_date else datetime.now(BJT)
+            parsed = parse_jiemian_list(data, final_url, anchor)
+            # Relative labels can be stale; use the article's explicit epoch, never guess.
+            for entry in parsed.entries:
+                if not entry["published_parsed"] and re.fullmatch(r"\d+\s*(?:分钟|小时)前", entry["published"]):
+                    try:
+                        article_data, _ = fetch_bytes(entry["link"], cfg["request_timeout_seconds"])
+                        epochs = lxml_html.fromstring(article_data).xpath("//span/@data-article-publish-time")
+                        exact = datetime.fromtimestamp(int(epochs[0]), BJT)
+                        entry.update(published=exact.isoformat(), published_parsed=exact.utctimetuple(),
+                                     time_basis="jiemian_article_publish_epoch", time_precision="second")
+                    except (requests.RequestException, ValueError, IndexError, etree.ParserError, OverflowError, OSError):
+                        pass  # Still missing a reliable time; normal missing_time accounting applies.
+        else:
+            data, _ = fetch_bytes(source["url"], cfg["request_timeout_seconds"])
+            parsed = feedparser.parse(data)
         if not parsed.version or (parsed.bozo and not parsed.entries):
             raise ValueError("not_an_rss_or_atom_feed")
         report["total"] = len(parsed.entries)
@@ -143,15 +199,21 @@ def fetch_feed(source, now, cfg):
             summary = plain(entry.get("summary", ""))
             content = max((plain(c.get("value", "")) for c in entry.get("content", [])), key=len, default="")
             restricted = source.get("access") == "summary_only"
-            items.append({"title": plain(entry.get("title", "无标题")), "url": canonical_url(url),
+            item = {"title": plain(entry.get("title", "无标题")), "url": canonical_url(url),
                           "source": source["name"], "publisher": source.get("publisher", source["name"]),
-                          "time": stamp.isoformat(), "time_basis": date_field,
+                          "time": stamp.isoformat(), "time_basis": entry.get("time_basis", date_field),
+                          "time_precision": entry.get("time_precision", "second"),
                           "published_raw": entry.get("published", ""), "updated_raw": entry.get("updated", ""),
                           "summary": summary, "text": summary if restricted else content or summary,
                           "content_status": "paywall" if restricted else "rss_excerpt" if content else "summary_only",
                           "content_note": "来源配置仅使用公开 RSS 摘要" if restricted else "尚未获取公开网页正文",
                           "fetch_article": not restricted and source.get("fetch_article", True),
-                          "background": False})
+                          "background": False}
+            image_entry = {k: v for k, v in entry.items() if k != "content"} if restricted else entry
+            images = rss_images(image_entry, item["url"])
+            if images:
+                item["images"] = images
+            items.append(item)
         report["in_window"] = len(items)
         report["latest_time"] = max((entry_time(e, source)[0].isoformat() for e in parsed.entries if entry_time(e, source)[0]), default=None)
         return items, report
@@ -170,6 +232,8 @@ def deduplicate(items):
         else:
             old = unique[key]
             old["also_in"].append(item["source"])
+            if old.get("images") or item.get("images"):
+                old["images"] = dedupe_images(old.get("images", []) + item.get("images", []))
             if len(item["text"]) > len(old["text"]):
                 for field in ("text", "summary", "content_status", "content_note"):
                     old[field] = item[field]
@@ -184,6 +248,7 @@ def fetch_article(item, timeout):
         data, final_url = fetch_bytes(item["url"], timeout)
         # A normal public GET only: no cookies, login, archive, proxy or alternate paywall path.
         page = data.decode("utf-8", errors="replace")
+        add_page_images(item, data, final_url, paywall=bool(PAYWALL.search(page)))
         if PAYWALL.search(page):
             item.update(text=item["summary"], content_status="paywall", content_note="网页标记为付费/受限，仅保留 RSS 摘要")
             return item
@@ -199,6 +264,25 @@ def fetch_article(item, timeout):
             item.update(text=item["summary"], content_status="paywall", content_note=f"网页要求登录/付款（{error_label(exc)}），仅使用公开 RSS 摘要")
         else:
             item["content_note"] = f"公开网页获取失败（{error_label(exc)}），使用 RSS 已提供内容"
+    return item
+
+
+def add_page_images(item, page, source_page, *, paywall=False):
+    candidates = html_images(page, source_page, include_article=not (paywall or item.get("content_status") == "paywall"))
+    images = dedupe_images(item.get("images", []) + candidates)
+    if images:
+        item["images"] = images
+
+
+def enrich_image_candidates(item, timeout):
+    """Only called for explicitly selected articles; never downloads image binaries."""
+    try:
+        data, final_url = fetch_bytes(item["url"], timeout)
+        paywall = bool(PAYWALL.search(data.decode("utf-8", errors="replace")))
+        add_page_images(item, data, final_url, paywall=paywall)
+        item["image_note"] = "候选未经看图筛选或图片可访问性验证，交由 dot 查看；未下载图片"
+    except Exception as exc:
+        item["image_note"] = f"入选原文图片候选补取失败（{error_label(exc)}），保留已有候选"
     return item
 
 
@@ -264,6 +348,20 @@ def validate_digest(value, articles):
             raise ValueError("invalid_inline_citations")
         if re.search(r"https?://", topic["paragraph"]):
             raise ValueError("use_evidence_ids_not_urls")
+        selected_images = topic.get("images", [])
+        if not isinstance(selected_images, list):
+            raise ValueError("topic_images_must_be_list")
+        paragraph_count = len(re.split(r"\n\s*\n", topic["paragraph"].strip()))
+        for selected in selected_images:
+            if not isinstance(selected, dict) or not http_url(selected.get("source_page", "")):
+                raise ValueError("image_source_page_required")
+            if not normalize_image_url(selected.get("url", ""), selected["source_page"]):
+                raise ValueError("invalid_selected_image_url")
+            if not isinstance(selected.get("caption"), str) or not selected["caption"].strip():
+                raise ValueError("selected_image_caption_required")
+            position = selected.get("after_paragraph", 1)
+            if type(position) is not int or not 1 <= position <= paragraph_count:
+                raise ValueError("invalid_image_paragraph_position")
     return value
 
 
@@ -307,6 +405,10 @@ def generate_digest(snapshot, cfg, force_preview=False):
             reason = str(blocked.get("message", "模型未提供具体原因")).replace(key, "[密钥已隐藏]")[:500]
             state = f"版权引用限制：尚未生成摘编日报。涉及材料：{'、'.join(named) or '模型未指明'}。{reason}；请向用户报告并等待所需材料，未自动改为同义改写。"
             return None, state.replace(key, "[密钥已隐藏]")
+        if isinstance(decoded, dict) and isinstance(decoded.get("topics"), list):
+            for topic in decoded["topics"]:
+                if isinstance(topic, dict):
+                    topic.pop("images", None)  # Text API cannot perform the required dot visual review.
         digest = validate_digest(decoded, selected + background)
         digest["provenance"] = {"method": "compatible_api", "model": model, "candidate_count": len(selected)}
         return digest, f"AI 日报已生成；输入 {len(selected)} / {len(snapshot['articles']) - len(background)} 条近期材料（按媒体均衡取样）"
@@ -332,11 +434,14 @@ def preview_groups(articles):
 
 
 def source_line(a):
-    return f"{a['source']} · {a['time'].replace('T', ' ')} · {STATUS[a['content_status']]}" + (" · 较早背景" if a.get("background") else "")
+    shown_time = a["time"].replace("T", " ")
+    if a.get("time_precision") == "minute":
+        shown_time = a["time"][:16].replace("T", " ") + a["time"][-6:]
+    return f"{a['source']} · {shown_time} · {STATUS[a['content_status']]}" + (" · 较早背景" if a.get("background") else "")
 
 
 def markdown_link(title, url):
-    return f"[{markdown_text(title)}](<{url}>)"
+    return f"[{markdown_text(title)}](<{requests.utils.requote_uri(url)}>)"
 
 
 def markdown_text(text):
@@ -358,6 +463,20 @@ def numbered_paragraph(text, by_id, numbers, *, as_html=False):
 
 
 CSS = """body{margin:0;background:#f2f1ec;color:#202b2a;font:17px/1.85 system-ui,'Microsoft YaHei',sans-serif}main{max-width:940px;margin:auto;padding:42px 28px}h1{font-size:36px;line-height:1.3}h2{font-size:24px;line-height:1.5;margin-top:0}a{color:#166e67;overflow-wrap:anywhere}header{border-bottom:3px solid #166e67;margin-bottom:30px;padding-bottom:24px}.meta,.note,small{font-size:14px;color:#566461}.banner{background:#e4ece4;border-left:4px solid #166e67;padding:12px 18px}.topic{background:#fff;padding:26px 30px;margin:22px 0;border-radius:8px}.sources{font-size:14px;line-height:1.65;padding-left:22px}.sources li{margin:10px 0}.pill{font-size:13px;background:#edf1ec;border-radius:4px;padding:3px 7px}table{border-collapse:collapse;width:100%;font-size:13px}td,th{padding:9px 7px;border-bottom:1px solid #d4dad4;text-align:left}details{margin:20px 0}p{overflow-wrap:anywhere}.cite{font-size:12px;vertical-align:super}footer{margin-top:34px;font-size:13px;color:#566461}@media(max-width:600px){main{padding:24px 16px}h1{font-size:29px}.topic{padding:22px 18px}table{font-size:12px}}"""
+CSS += "figure{margin:22px 0}figure img{display:block;max-width:100%;height:auto;margin:auto}figcaption{font-size:14px;color:#566461;margin-top:8px}"
+
+
+def reader_figure(selected):
+    url = normalize_image_url(selected["url"], selected["source_page"])
+    caption = selected["caption"]
+    credit = str(selected.get("credit") or urlsplit(selected["source_page"]).hostname)
+    alt = str(selected.get("alt") or caption)
+    markdown = f"![{markdown_text(alt)}](<{url}>)\n\n{markdown_text(caption)} · 来源：{markdown_link(credit, selected['source_page'])}"
+    markup = (f'<figure><a href="{html.escape(url, quote=True)}"><img src="{html.escape(url, quote=True)}" '
+              f'alt="{html.escape(alt, quote=True)}" loading="lazy" referrerpolicy="no-referrer"></a>'
+              f'<figcaption>{html.escape(caption)} · 来源：<a href="{html.escape(selected["source_page"], quote=True)}">'
+              f'{html.escape(credit)}</a></figcaption></figure>')
+    return markdown, markup
 
 
 def render(snapshot, digest, state):
@@ -376,8 +495,18 @@ def render(snapshot, digest, state):
             evidence = [by_id[i] for i in topic["article_ids"]]
             publishers = set(a["publisher"] for a in evidence)
             source_heading = "原文（单篇材料）" if len(evidence) == 1 else "原文（同一媒体）" if len(publishers) == 1 else "原文"
-            md += [f"## {markdown_text(topic['title'])}", "", numbered_paragraph(topic["paragraph"], by_id, numbers), "", f"{source_heading}：", ""]
-            chunks.append(f'<section class="topic"><h2>{html.escape(topic["title"])}</h2><p>{numbered_paragraph(topic["paragraph"], by_id, numbers, as_html=True)}</p><p class="note">{source_heading}</p><ul class="sources">')
+            md += [f"## {markdown_text(topic['title'])}", ""]
+            chunks.append(f'<section class="topic"><h2>{html.escape(topic["title"])}</h2>')
+            for position, paragraph in enumerate(re.split(r"\n\s*\n", topic["paragraph"].strip()), 1):
+                md += [numbered_paragraph(paragraph, by_id, numbers), ""]
+                chunks.append(f'<p>{numbered_paragraph(paragraph, by_id, numbers, as_html=True)}</p>')
+                for selected in topic.get("images", []):
+                    if selected.get("after_paragraph", 1) == position:
+                        picture_md, picture_html = reader_figure(selected)
+                        md += [picture_md, ""]
+                        chunks.append(picture_html)
+            md += [f"{source_heading}：", ""]
+            chunks.append(f'<p class="note">{source_heading}</p><ul class="sources">')
             for a in evidence:
                 md.append(f"- {markdown_link('[' + str(numbers[a['id']]) + '] ' + a['title'], a['url'])} — {source_line(a)}")
                 chunks.append(f'<li><a href="{html.escape(a["url"], quote=True)}">[{numbers[a["id"]]}] {html.escape(a["title"])}</a><br><small>{html.escape(source_line(a))}</small></li>')
@@ -467,7 +596,10 @@ def main():
     parser.add_argument("--snapshot", help="复用本地抓取快照，不重新联网抓取")
     parser.add_argument("--digest", help="渲染已有编辑稿 JSON（必须配合 --snapshot），不调用 API")
     parser.add_argument("--output", help="覆盖输出目录，例如单独存放首期样稿")
+    parser.add_argument("--image-articles", nargs="+", metavar="ARTICLE_ID", help="仅补取入选原文的图片候选；必须配合 --snapshot，不调用模型或渲染")
     args = parser.parse_args()
+    if args.image_articles and (not args.snapshot or args.digest):
+        parser.error("--image-articles 必须配合 --snapshot，且不能与 --digest 同时使用")
     cfg = read_json(ROOT / args.config)
     if args.feed_url:
         cfg["feeds"].append({"name": args.feed_name, "url": args.feed_url, "enabled": True})
@@ -478,8 +610,22 @@ def main():
     output = Path(args.output or cfg["output_dir"])
     if not output.is_absolute():
         output = ROOT / output
+    if args.image_articles:
+        if (ROOT / args.snapshot).resolve() == (output / "image.articles.json").resolve():
+            parser.error("图片补取不能覆盖输入快照；请用 --output 指定不同目录")
+        by_id = {a["id"]: a for a in snapshot["articles"]}
+        unknown = set(args.image_articles) - by_id.keys()
+        if unknown:
+            parser.error("图片补取存在未知文章 ID：" + "、".join(sorted(unknown)))
+        selected = [by_id[i] for i in dict.fromkeys(args.image_articles)]
+        with futures.ThreadPoolExecutor(max_workers=cfg["workers"]) as pool:
+            list(pool.map(lambda item: enrich_image_candidates(item, cfg["request_timeout_seconds"]), selected))
+        write_json(output / "image.articles.json", snapshot)
+        print(f"已为 {len(selected)} 篇入选文章补取图片候选；快照：{output.resolve() / 'image.articles.json'}；原始快照未改动，未调用模型或下载图片")
+        return
     # Persist before any paid API operation; failure still leaves a useful complete preview.
-    write_json(output / "fetch.articles.json", snapshot)
+    if not args.snapshot:
+        write_json(output / "fetch.articles.json", snapshot)
     if args.digest:
         if not args.snapshot:
             parser.error("--digest 必须配合 --snapshot，避免编辑稿错配到新条目")

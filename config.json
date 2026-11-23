@@ -15,7 +15,11 @@
     "model_env": "RSS_API_MODEL",
     "timeout_seconds": 180,
     "max_tokens": 6500,
-    "request_options": {"thinking": {"type": "disabled"}}
+    "request_options": {
+      "thinking": {
+        "type": "disabled"
+      }
+    }
   },
   "feeds": [
     {
@@ -108,6 +112,60 @@
       "publisher": "Eurogamer",
       "url": "https://www.eurogamer.net/feed",
       "enabled": true
+    },
+    {
+      "name": "界面新闻·商业",
+      "publisher": "界面新闻",
+      "url": "https://www.jiemian.com/lists/2.html",
+      "format": "jiemian_html",
+      "enabled": true,
+      "note": "第一方栏目列表，时间为北京时间且精确到分钟；公开摘要，正文只尝试匿名访问"
+    },
+    {
+      "name": "界面新闻·财经",
+      "publisher": "界面新闻",
+      "url": "https://www.jiemian.com/lists/800.html",
+      "format": "jiemian_html",
+      "enabled": true,
+      "note": "第一方栏目列表，时间为北京时间且精确到分钟；与商业栏目按同一媒体归并"
+    },
+    {
+      "name": "虎嗅",
+      "publisher": "虎嗅",
+      "url": "https://rss.huxiu.com/",
+      "enabled": true,
+      "note": "官方 RSS；返回条数受源站列表长度限制"
+    },
+    {
+      "name": "IT之家",
+      "publisher": "IT之家",
+      "url": "https://www.ithome.com/rss/",
+      "enabled": true,
+      "note": "官方 RSS；返回条数受源站列表长度限制"
+    },
+    {
+      "name": "界面新闻·中国",
+      "publisher": "界面新闻",
+      "url": "https://www.jiemian.com/lists/71.html",
+      "format": "jiemian_html",
+      "enabled": true,
+      "note": "第一方栏目列表；相对时间仅在取得原文明确发布时间后使用，与其它界面栏目按同一媒体归并"
+    },
+    {
+      "name": "界面新闻·天下",
+      "publisher": "界面新闻",
+      "url": "https://www.jiemian.com/lists/32.html",
+      "format": "jiemian_html",
+      "enabled": true,
+      "note": "第一方栏目列表；相对时间仅在取得原文明确发布时间后使用，与其它界面栏目按同一媒体归并"
+    },
+    {
+      "name": "界面新闻·科技",
+      "publisher": "界面新闻",
+      "url": "https://www.jiemian.com/lists/65.html",
+      "format": "jiemian_html",
+      "enabled": true,
+      "note": "第一方栏目列表；相对时间仅在取得原文明确发布时间后使用，与其它界面栏目按同一媒体归并"
     }
   ]
 }
