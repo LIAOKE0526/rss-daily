@@ -29,7 +29,7 @@ BJT = timezone(timedelta(hours=8))
 HEADERS = {"User-Agent": "RSSDaily/1.0 (+local personal digest)",
            "Accept": "application/rss+xml, application/xml, text/xml, application/atom+xml, text/html, */*;q=0.8"}
 PAYWALL = re.compile(r'"isAccessibleForFree"\s*:\s*(?:false|"false")|subscribe to (?:read|continue reading)|订阅后(?:可)?阅读|付费后(?:可)?阅读|购买后(?:可)?阅读', re.I)
-STATUS = {"summary_only": "仅摘要", "paywall": "付费内容·仅公开摘要", "rss_excerpt": "RSS 正文片段", "public_extract": "公开网页提取片段"}
+STATUS = {"summary_only": "仅摘要", "paywall": "仅摘要", "rss_excerpt": "RSS 正文片段", "public_extract": "公开网页提取片段", "mirror_text": ""}
 
 
 def read_json(path):
@@ -147,8 +147,9 @@ def parse_jiemian_list(data, source_url, anchor):
             continue
         raw = plain(" ".join(card.xpath(".//span[contains(@class, 'news-footer__date')]/text()")))
         stamp = jiemian_list_time(raw, anchor)
+        summary = plain(" ".join(card.xpath(".//div[contains(@class, 'card-list__summary')]//p//text()")))
         entries.append({"title": plain(" ".join(titles)), "link": urljoin(source_url, links[0]),
-                        "summary": plain(" ".join(card.xpath(".//div[contains(@class, 'card-list__summary')]//p//text()"))),
+                        "summary": summary, "summary_detail": {"value": summary},
                         "published": raw, "published_parsed": stamp.utctimetuple() if stamp else None,
                         "time_basis": "jiemian_channel_display_BJT", "time_precision": "minute"})
     return feedparser.FeedParserDict(version="jiemian_html", bozo=False, entries=entries)
@@ -198,20 +199,23 @@ def fetch_feed(source, now, cfg):
                 continue
             restricted = source.get("access") == "summary_only"
             only_summary = restricted or source.get("feed_content") == "summary_only"
-            summary_raw = (entry.get("summary_detail") or {}).get("value", "") if only_summary else entry.get("summary", "")
+            summary_raw = (entry.get("summary_detail") or {}).get("value", "")
             summary = plain(summary_raw)
             content = "" if only_summary else max((plain(c.get("value", "")) for c in entry.get("content", [])), key=len, default="")
+            mirror_body = bool(content) and source.get("content_origin") == "mirror"
             item = {"title": plain(entry.get("title", "无标题")), "url": canonical_url(url),
                           "source": source["name"], "publisher": source.get("publisher", source["name"]),
                           "time": stamp.isoformat(), "time_basis": entry.get("time_basis", date_field),
                           "time_precision": entry.get("time_precision", "second"),
                           "published_raw": entry.get("published", ""), "updated_raw": entry.get("updated", ""),
                           "summary": summary, "text": summary if only_summary else content or summary,
-                          "content_status": "paywall" if restricted else "rss_excerpt" if content else "summary_only",
-                          "content_note": ("来源配置仅使用公开 RSS 摘要" + ("；" + source["note"] if source.get("note") else "")) if only_summary else "尚未获取公开网页正文",
+                          "content_status": "paywall" if restricted else "mirror_text" if mirror_body else "rss_excerpt" if content else "summary_only",
+                          "content_note": ("采用公开 RSS 提供的镜像正文，未核实原站完整性；" + source.get("note", "")) if mirror_body else ("来源配置仅使用公开 RSS 摘要" + ("；" + source["note"] if source.get("note") else "")) if only_summary else "尚未获取公开网页正文",
                           "fetch_article": not restricted and source.get("fetch_article", True),
                           "fetch_image_page": source.get("fetch_image_page", True),
                           "background": False}
+            if mirror_body:
+                item.update(content_origin="mirror", mirror_url=source["url"])
             image_entry = {k: v for k, v in entry.items() if k != "content"} if only_summary else entry
             if only_summary:
                 image_entry["summary"] = summary_raw
@@ -237,15 +241,36 @@ def deduplicate(items):
         else:
             old = unique[key]
             old["also_in"].append(item["source"])
+            restricted = old if old["content_status"] == "paywall" else item if item["content_status"] == "paywall" else None
+            if restricted is not None:
+                old["summary"] = restricted["summary"]
+                old["images"] = list(restricted.get("images", []))
+                restrict_article_to_summary(old, restricted["content_note"])
+                old["fetch_article"] = False
+                continue
             if old.get("images") or item.get("images"):
                 old["images"] = dedupe_images(old.get("images", []) + item.get("images", []))
             if len(item["text"]) > len(old["text"]):
                 for field in ("text", "summary", "content_status", "content_note"):
                     old[field] = item[field]
+                for field in ("content_origin", "mirror_url", "fetch_article", "fetch_image_page"):
+                    if field in item:
+                        old[field] = item[field]
+                    else:
+                        old.pop(field, None)
     result = sorted(unique.values(), key=lambda a: a["time"], reverse=True)
     for i, item in enumerate(result, 1):
         item["id"] = f"A{i:03d}"
     return result
+
+
+def restrict_article_to_summary(item, note):
+    was_mirror = item.get("content_origin") == "mirror"
+    item.update(text=item["summary"], content_status="paywall", content_note=note)
+    item.pop("content_origin", None)
+    item.pop("mirror_url", None)
+    if was_mirror and item.get("images"):
+        item["images"] = [image for image in item["images"] if image.get("origin") not in ("rss_html", "article_img")]
 
 
 def fetch_article(item, timeout):
@@ -255,18 +280,23 @@ def fetch_article(item, timeout):
         page = data.decode("utf-8", errors="replace")
         add_page_images(item, data, final_url, paywall=bool(PAYWALL.search(page)))
         if PAYWALL.search(page):
-            item.update(text=item["summary"], content_status="paywall", content_note="网页标记为付费/受限，仅保留 RSS 摘要")
+            restrict_article_to_summary(item, "网页标记为付费/受限，仅保留 RSS 摘要")
             return item
         text = trafilatura.extract(data, include_comments=False, include_tables=False, url=final_url) or ""
         if len(text) >= 250 and len(text) > len(item["text"]):
             item.update(text=text, content_status="public_extract", content_note="普通公开 GET 的正文提取；不保证全文")
+            if item.get("content_origin") == "mirror":
+                item["content_origin"] = "original"
+                item.pop("mirror_url", None)
+        elif item["content_status"] == "mirror_text":
+            item["content_note"] = "原站未提取到更长正文，保留已有 RSS 镜像文本"
         elif item["content_status"] == "rss_excerpt":
             item["content_note"] = "使用 RSS 正文片段；网页未提取到更完整内容"
         else:
             item["content_note"] = "网页未提取到足够正文，仅使用 RSS 摘要"
     except Exception as exc:
         if isinstance(exc, requests.HTTPError) and exc.response.status_code in (401, 402):
-            item.update(text=item["summary"], content_status="paywall", content_note=f"网页要求登录/付款（{error_label(exc)}），仅使用公开 RSS 摘要")
+            restrict_article_to_summary(item, f"网页要求登录/付款（{error_label(exc)}），仅使用公开 RSS 摘要")
         else:
             item["content_note"] = f"公开网页获取失败（{error_label(exc)}），使用 RSS 已提供内容"
     return item
@@ -450,7 +480,15 @@ def source_line(a):
         shown_time = a["time"][:16].replace("T", " ") + a["time"][-6:]
     kind = {"chinese_report": "中文报道", "translation": "中文译文", "excerpt": "中文摘编",
             "summary_only": "仅摘要", "english_original": "英文原文"}.get(a.get("reader_content_kind"), "") if a.get("reader_url") else "英文原文" if a.get("source_language") == "en" else ""
-    return f"{a['source']} · {shown_time} · {STATUS[a['content_status']]}" + (f" · {kind}" if kind else "") + (" · 较早背景" if a.get("background") else "")
+    shown_source = a.get("publisher", a["source"]) if a.get("content_origin") == "mirror" else a["source"]
+    parts = [shown_source, shown_time]
+    if STATUS[a["content_status"]]:
+        parts.append(STATUS[a["content_status"]])
+    if kind and kind not in parts:
+        parts.append(kind)
+    if a.get("background"):
+        parts.append("较早背景")
+    return " · ".join(parts)
 
 
 def reference_url(article):
@@ -551,13 +589,13 @@ def render(snapshot, digest, state):
     md += ["## 来源状态", "", "| 来源 | 状态 | 48h 条目 | 说明 |", "| --- | --- | ---: | --- |"]
     chunks.append('<details><summary>来源状态与材料限制</summary><table><tr><th>来源</th><th>状态</th><th>48h 条目</th><th>说明</th></tr>')
     for r in snapshot["sources"]:
-        detail = r.get("error", "") or r.get("note", "")
+        detail = r.get("error", "")
         if r.get("missing_time"):
             detail += f"；{r['missing_time']} 条缺失时间已跳过"
         label = {"ok": "成功", "error": "失败·已隔离", "disabled": "未启用"}[r["status"]]
         md.append(f"| {markdown_text(r['name'])} | {label} | {r['in_window']} | {markdown_text(detail)} |")
         chunks.append('<tr>' + ''.join(f'<td>{html.escape(str(v))}</td>' for v in (r["name"], label, r["in_window"], detail)) + '</tr>')
-    chunks.append('</table></details><footer>正文状态为提取片段或摘要；未绕过登录、付费墙或访问限制。feed.xml 仅为本地文件，尚未发布或提供手机访问。</footer>')
+    chunks.append('</table></details><footer>完整材料和采集记录保存在 JSON 中。feed.xml 仅为本地文件，尚未提供手机访问。</footer>')
     md += ["", "完整条目、正文状态、抓取依据见同目录 articles.json。feed.xml 仅为本地文件，尚未提供手机访问。", ""]
     body = "\n".join(chunks)
     full = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + html.escape(title) + '</title><style>' + CSS + '</style></head><body><main>' + body + '</main></body></html>'
