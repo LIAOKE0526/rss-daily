@@ -10,6 +10,7 @@
       <outline text="FT" title="FT" type="rss" xmlUrl="https://www.ft.com/rss/home/international" />
       <outline text="知识分子" title="知识分子" type="rss" xmlUrl="https://www.zhishifenzi.com/rss" />
       <outline text="机核" title="机核" type="rss" xmlUrl="https://www.gcores.com/rss" />
+      <outline text="机器之心" title="机器之心" type="rss" xmlUrl="https://wechat2rss.bestblogs.dev/feed/8d97af31b0de9e48da74558af128a4673d78c9a3.xml" />
       <outline text="The Guardian 国际" title="The Guardian 国际" type="rss" xmlUrl="https://www.theguardian.com/world/rss" />
       <outline text="The Verge" title="The Verge" type="rss" xmlUrl="https://www.theverge.com/rss/index.xml" />
       <outline text="量子位" title="量子位" type="rss" xmlUrl="https://www.qbitai.com/feed" />
@@ -18,6 +19,11 @@
       <outline text="虎嗅" title="虎嗅" type="rss" xmlUrl="https://rss.huxiu.com/" />
       <outline text="IT之家" title="IT之家" type="rss" xmlUrl="https://www.ithome.com/rss/" />
       <outline text="晚点LatePost（公众号）" title="晚点LatePost（公众号）" type="rss" xmlUrl="https://wechat2rss.bestblogs.dev/feed/c442206ec9957f3c52f2f40300ca532079538b31.xml" />
+      <outline text="阮一峰的网络日志" title="阮一峰的网络日志" type="rss" xmlUrl="https://www.ruanyifeng.com/blog/atom.xml" />
+      <outline text="Anime News Network" title="Anime News Network" type="rss" xmlUrl="https://www.animenewsnetwork.com/news/rss.xml?ann-edition=us" />
+      <outline text="Comic Natalie" title="Comic Natalie" type="rss" xmlUrl="https://natalie.mu/comic/feed/news" />
+      <outline text="CNBC 美国要闻" title="CNBC 美国要闻" type="rss" xmlUrl="https://www.cnbc.com/id/100003114/device/rss/rss.html" />
+      <outline text="MarketWatch" title="MarketWatch" type="rss" xmlUrl="https://feeds.content.dowjones.io/public/rss/mw_topstories" />
       <outline text="界面新闻（综合）" title="界面新闻（综合）" type="rss" xmlUrl="https://a.jiemian.com/index.php?m=article&amp;a=rss" description="仅供RSS阅读器订阅；综合RSS为有限滚动列表，不代表五栏目近48小时完整报道。项目仍按config.json采集商业、财经、中国、天下、科技五个栏目。" />
     </outline>
   </body>

@@ -60,9 +60,14 @@
     },
     {
       "name": "机器之心",
-      "url": "https://www.jiqizhixin.com/rss",
-      "enabled": false,
-      "note": "实测重定向到数据服务页面，非公开 RSS；保留待手动更新"
+      "publisher": "机器之心",
+      "url": "https://wechat2rss.bestblogs.dev/feed/8d97af31b0de9e48da74558af128a4673d78c9a3.xml",
+      "enabled": true,
+      "feed_content": "prefer_fulltext",
+      "fetch_article": false,
+      "note": "BestBlogs 公开公众号 RSS，保留镜像正文及 RSS 图片。时间来自 RSS，微信原文可能需验证，镜像与原文的完整一致性未独立核实。",
+      "fetch_image_page": false,
+      "content_origin": "mirror"
     },
     {
       "name": "财新",
@@ -177,6 +182,44 @@
       "note": "BestBlogs公开公众号RSS；优先采用content:encoded镜像正文并保留完整文本。时间来自RSS自报；原文可能需微信验证，镜像与原站完整一致性未独立核实。",
       "fetch_image_page": false,
       "content_origin": "mirror"
+    },
+    {
+      "name": "阮一峰的网络日志",
+      "publisher": "阮一峰",
+      "url": "https://www.ruanyifeng.com/blog/atom.xml",
+      "enabled": true,
+      "fetch_article": false,
+      "note": "第一方 Atom，含科技爱好者周刊的正文；周刊通常每周五发布"
+    },
+    {
+      "name": "Anime News Network",
+      "publisher": "Anime News Network",
+      "url": "https://www.animenewsnetwork.com/news/rss.xml?ann-edition=us",
+      "enabled": true,
+      "note": "英文动漫及漫画新闻；RSS 提供摘要"
+    },
+    {
+      "name": "Comic Natalie",
+      "publisher": "Comic Natalie",
+      "url": "https://natalie.mu/comic/feed/news",
+      "enabled": true,
+      "note": "日文漫画及动画新闻；Atom 提供摘要"
+    },
+    {
+      "name": "CNBC 美国要闻",
+      "publisher": "CNBC",
+      "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+      "enabled": true,
+      "note": "英文美国商业和市场报道，含美股盘前动态；RSS 提供摘要"
+    },
+    {
+      "name": "MarketWatch",
+      "publisher": "MarketWatch",
+      "url": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+      "enabled": true,
+      "feed_content": "summary_only",
+      "fetch_article": false,
+      "note": "英文美股市场和个人财经；匿名正文样本返回 HTTP 401，使用公开 RSS 摘要"
     }
   ]
 }

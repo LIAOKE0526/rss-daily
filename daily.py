@@ -365,7 +365,7 @@ def select_candidates(articles, limit):
 
 
 def validate_digest(value, articles):
-    if not isinstance(value, dict) or not isinstance(value.get("topics"), list) or len(value["topics"]) > 6:
+    if not isinstance(value, dict) or not isinstance(value.get("topics"), list):
         raise ValueError("digest_schema")
     by_id = {a["id"]: a for a in articles}
     used = set()
@@ -450,6 +450,9 @@ def generate_digest(snapshot, cfg, force_preview=False):
             for topic in decoded["topics"]:
                 if isinstance(topic, dict):
                     topic.pop("images", None)  # Text API cannot perform the required dot visual review.
+                    # A text completion cannot create or read back a Reader document.
+                    topic.pop("reader_summary_url", None)
+                    topic.pop("reader_summary_verified", None)
         digest = validate_digest(decoded, selected + background)
         digest["provenance"] = {"method": "compatible_api", "model": model, "candidate_count": len(selected)}
         return digest, f"AI 日报已生成；输入 {len(selected)} / {len(snapshot['articles']) - len(background)} 条近期材料（按媒体均衡取样）"
@@ -537,6 +540,87 @@ def reader_figure(selected):
     return markdown, markup
 
 
+def render_topic(topic, by_id, *, heading_level=2, numbers=None):
+    evidence = [by_id[i] for i in topic["article_ids"]]
+    if numbers is None:
+        numbers = {a["id"]: i for i, a in enumerate(evidence, 1)}
+    publishers = {a["publisher"] for a in evidence}
+    source_heading = "原文（单篇材料）" if len(evidence) == 1 else "原文（同一媒体）" if len(publishers) == 1 else "原文"
+    md = [f"{'#' * heading_level} {markdown_text(topic['title'])}", ""]
+    chunks = [f'<section class="topic"><h{heading_level}>{html.escape(topic["title"])}</h{heading_level}>']
+    for position, paragraph in enumerate(re.split(r"\n\s*\n", topic["paragraph"].strip()), 1):
+        md += [numbered_paragraph(paragraph, by_id, numbers), ""]
+        chunks.append(f'<p>{numbered_paragraph(paragraph, by_id, numbers, as_html=True)}</p>')
+        for selected in topic.get("images", []):
+            if selected.get("after_paragraph", 1) == position:
+                picture_md, picture_html = reader_figure(selected)
+                md += [picture_md, ""]
+                chunks.append(picture_html)
+    md += [f"{source_heading}：", ""]
+    chunks.append(f'<p class="note">{source_heading}</p><ul class="sources">')
+    for a in evidence:
+        target = reference_url(a)
+        reference_title = a.get("reader_title") or a["title"]
+        md.append(f"- {markdown_link('[' + str(numbers[a['id']]) + '] ' + reference_title, target)} — {source_line(a)}")
+        chunks.append(f'<li><a href="{html.escape(target, quote=True)}">[{numbers[a["id"]]}] {html.escape(reference_title)}</a><br><small>{html.escape(source_line(a))}</small></li>')
+    md.append("")
+    chunks.append("</ul></section>")
+    return "\n".join(md), "\n".join(chunks)
+
+
+def html_document(title, body):
+    return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + html.escape(title) + '</title><style>' + CSS + '</style></head><body><main>' + body + '</main></body></html>'
+
+
+def verified_summary_url(topic):
+    # Dot supplies the flag only after creating and checking this event's document.
+    url = topic.get("reader_summary_url")
+    if topic.get("reader_summary_verified") is not True or not isinstance(url, str) or not http_url(url):
+        return None
+    p = urlsplit(url)
+    if p.scheme != "https" or p.netloc.lower() != "read.readwise.io" or not re.fullmatch(r"/read/[A-Za-z0-9_-]+/?", p.path):
+        return None
+    return "https://read.readwise.io" + p.path.rstrip("/")
+
+
+def clear_delivery(output):
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "chat.md").write_text("", encoding="utf-8")
+    write_json(output / "delivery.json", {"status": "preparing", "documents": [], "chat": "chat.md", "ready_count": 0})
+
+
+def write_delivery(output, snapshot, digest):
+    topics = digest["topics"] if digest is not None else []
+    by_id = {a["id"]: a for a in snapshot["articles"]}
+    urls = [verified_summary_url(topic) for topic in topics]
+    documents, lines = [], []
+    for index, (topic, url) in enumerate(zip(topics, urls), 1):
+        stem = f"reader/{index:03d}"
+        md, body = render_topic(topic, by_id, heading_level=1)
+        md_path, html_path = stem + ".md", stem + ".html"
+        (output / "reader").mkdir(exist_ok=True)
+        (output / md_path).write_text(md, encoding="utf-8")
+        (output / html_path).write_text(html_document(topic["title"], body), encoding="utf-8")
+        reason = ""
+        if not url:
+            reason = "missing_verified_reader_summary"
+        elif urls.count(url) > 1:
+            reason = "reader_summary_shared_by_events"
+        elif not re.fullmatch(r"【[\u4e00-\u9fff]{2}】[^\r\n]+", topic["title"]):
+            reason = "invalid_event_title"
+        if not reason:
+            lines.append(markdown_link(topic["title"], url))
+        documents.append({"title": topic["title"], "markdown": md_path, "html": html_path,
+                          "status": "pending" if reason else "ready", "reason": reason,
+                          "reader_summary_url": None if reason else url})
+    status = "preview" if digest is None else "empty" if not topics else "ready" if len(lines) == len(topics) else "partial" if lines else "pending"
+    manifest = {"generated_at": snapshot["generated_at"], "status": status, "documents": documents,
+                "chat": "chat.md", "ready_count": len(lines)}
+    write_json(output / "delivery.json", manifest)
+    (output / "chat.md").write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+    return manifest
+
+
 def render(snapshot, digest, state):
     articles = snapshot["articles"]
     by_id = {a["id"]: a for a in articles}
@@ -550,28 +634,9 @@ def render(snapshot, digest, state):
         reference_ids = list(dict.fromkeys(i for topic in digest["topics"] for i in topic["article_ids"]))
         numbers = {article_id: i for i, article_id in enumerate(reference_ids, 1)}
         for topic in digest["topics"]:
-            evidence = [by_id[i] for i in topic["article_ids"]]
-            publishers = set(a["publisher"] for a in evidence)
-            source_heading = "原文（单篇材料）" if len(evidence) == 1 else "原文（同一媒体）" if len(publishers) == 1 else "原文"
-            md += [f"## {markdown_text(topic['title'])}", ""]
-            chunks.append(f'<section class="topic"><h2>{html.escape(topic["title"])}</h2>')
-            for position, paragraph in enumerate(re.split(r"\n\s*\n", topic["paragraph"].strip()), 1):
-                md += [numbered_paragraph(paragraph, by_id, numbers), ""]
-                chunks.append(f'<p>{numbered_paragraph(paragraph, by_id, numbers, as_html=True)}</p>')
-                for selected in topic.get("images", []):
-                    if selected.get("after_paragraph", 1) == position:
-                        picture_md, picture_html = reader_figure(selected)
-                        md += [picture_md, ""]
-                        chunks.append(picture_html)
-            md += [f"{source_heading}：", ""]
-            chunks.append(f'<p class="note">{source_heading}</p><ul class="sources">')
-            for a in evidence:
-                target = reference_url(a)
-                reference_title = a.get("reader_title") or a["title"]
-                md.append(f"- {markdown_link('[' + str(numbers[a['id']]) + '] ' + reference_title, target)} — {source_line(a)}")
-                chunks.append(f'<li><a href="{html.escape(target, quote=True)}">[{numbers[a["id"]]}] {html.escape(reference_title)}</a><br><small>{html.escape(source_line(a))}</small></li>')
-            md.append("")
-            chunks.append("</ul></section>")
+            topic_md, topic_html = render_topic(topic, by_id, numbers=numbers)
+            md.append(topic_md)
+            chunks.append(topic_html)
         if not digest["topics"]:
             md += ["本期没有足够材料形成主题。", ""]
             chunks.append('<p>本期没有足够材料形成主题。</p>')
@@ -598,7 +663,7 @@ def render(snapshot, digest, state):
     chunks.append('</table></details><footer>完整材料和采集记录保存在 JSON 中。feed.xml 仅为本地文件，尚未提供手机访问。</footer>')
     md += ["", "完整条目、正文状态、抓取依据见同目录 articles.json。feed.xml 仅为本地文件，尚未提供手机访问。", ""]
     body = "\n".join(chunks)
-    full = '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>' + html.escape(title) + '</title><style>' + CSS + '</style></head><body><main>' + body + '</main></body></html>'
+    full = html_document(title, body)
     return title, "\n".join(md), full, body
 
 
@@ -606,17 +671,20 @@ def publish(output, snapshot, digest, state):
     output = Path(output)
     date = snapshot["generated_at"][:10]
     issue_dir = output / "issues" / date
-    output.mkdir(parents=True, exist_ok=True)
+    clear_delivery(output)
     title, md, full, body = render(snapshot, digest, state)
-    opened = output / ("preview.html" if digest is None else "latest.html")
-    write_json(output / "last-run.json", {"html_path": str(opened.resolve()), "preview": digest is None, "state": state})
-    if digest is None:
+    no_issue = digest is None or not digest["topics"]
+    opened = output / ("preview.html" if no_issue else "latest.html")
+    write_json(output / "last-run.json", {"html_path": str(opened.resolve()), "preview": no_issue, "state": state})
+    if no_issue:
         (output / "preview.md").write_text(md, encoding="utf-8")
         (output / "preview.html").write_text(full, encoding="utf-8")
         write_json(output / "preview.articles.json", snapshot)
         successful = any(read_json(p).get("digest") is not None for p in (output / "issues").glob("*/digest.json"))
-        if successful:
-            print(f"{state}\n已有成功日报与 feed.xml 已保留；新抓取见 {output.resolve() / 'preview.html'}")
+        if successful or digest is not None:
+            message = "已有成功日报与 feed.xml 已保留" if successful else "本轮零篇，不生成空日报或通知"
+            print(f"{state}\n{message}；本次记录见 {output.resolve() / 'preview.html'}")
+            write_delivery(output, snapshot, digest)
             return output
     issue_dir.mkdir(parents=True, exist_ok=True)
     write_json(issue_dir / "articles.json", snapshot)
@@ -643,6 +711,7 @@ def publish(output, snapshot, digest, state):
         ET.SubElement(item, "description").text = issue["body"]
     ET.indent(rss)
     ET.ElementTree(rss).write(output / "feed.xml", encoding="utf-8", xml_declaration=True)
+    write_delivery(output, snapshot, digest)
     print(f"HTML: {output.resolve() / 'latest.html'}\nMarkdown: {output.resolve() / 'latest.md'}\nRSS: {output.resolve() / 'feed.xml'}\n{state}")
     return issue_dir
 
@@ -650,7 +719,7 @@ def publish(output, snapshot, digest, state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="config.json")
-    parser.add_argument("--preview", action="store_true", help="只抓取和预览，不调用 API")
+    parser.add_argument("--preview", action="store_true", help="只抓取和预览，不调用 API；同时传 --digest 时仍仅预览")
     parser.add_argument("--feed-url", help="本次临时增加 RSS URL，不改订阅配置")
     parser.add_argument("--feed-name", default="手动订阅")
     parser.add_argument("--snapshot", help="复用本地抓取快照，不重新联网抓取")
@@ -661,15 +730,18 @@ def main():
     if args.image_articles and (not args.snapshot or args.digest):
         parser.error("--image-articles 必须配合 --snapshot，且不能与 --digest 同时使用")
     cfg = read_json(ROOT / args.config)
+    output = Path(args.output or cfg["output_dir"])
+    if not output.is_absolute():
+        output = ROOT / output
+    if not args.image_articles:
+        # Invalidate old links before reading/validating new materials, even on failure.
+        clear_delivery(output)
     if args.feed_url:
         cfg["feeds"].append({"name": args.feed_name, "url": args.feed_url, "enabled": True})
     if args.snapshot:
         snapshot = read_json(ROOT / args.snapshot)
     else:
         snapshot = collect(cfg, datetime.now(BJT))
-    output = Path(args.output or cfg["output_dir"])
-    if not output.is_absolute():
-        output = ROOT / output
     if args.image_articles:
         if (ROOT / args.snapshot).resolve() == (output / "image.articles.json").resolve():
             parser.error("图片补取不能覆盖输入快照；请用 --output 指定不同目录")
@@ -686,7 +758,7 @@ def main():
     # Persist before any paid API operation; failure still leaves a useful complete preview.
     if not args.snapshot:
         write_json(output / "fetch.articles.json", snapshot)
-    if args.digest:
+    if args.digest and not args.preview:
         if not args.snapshot:
             parser.error("--digest 必须配合 --snapshot，避免编辑稿错配到新条目")
         digest = validate_digest(read_json(ROOT / args.digest), snapshot["articles"])
