@@ -18,7 +18,7 @@
       <outline text="虎嗅" title="虎嗅" type="rss" xmlUrl="https://rss.huxiu.com/" />
       <outline text="IT之家" title="IT之家" type="rss" xmlUrl="https://www.ithome.com/rss/" />
       <outline text="晚点LatePost（公众号）" title="晚点LatePost（公众号）" type="rss" xmlUrl="https://wechat2rss.bestblogs.dev/feed/c442206ec9957f3c52f2f40300ca532079538b31.xml" />
-      <outline text="界面新闻（综合）" title="界面新闻（综合）" type="rss" xmlUrl="https://a.jiemian.com/index.php?m=article&amp;a=rss" description="项目内五个界面栏目使用官网网页解析；本OPML用官方综合RSS代替，不保留栏目拆分。" />
+      <outline text="界面新闻（综合）" title="界面新闻（综合）" type="rss" xmlUrl="https://a.jiemian.com/index.php?m=article&amp;a=rss" description="仅供RSS阅读器订阅；综合RSS为有限滚动列表，不代表五栏目近48小时完整报道。项目仍按config.json采集商业、财经、中国、天下、科技五个栏目。" />
     </outline>
   </body>
 </opml>
