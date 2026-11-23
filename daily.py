@@ -339,6 +339,8 @@ def validate_digest(value, articles):
             raise ValueError("unknown_evidence_id")
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate_evidence_id")
+        for article_id in ids:
+            reference_url(by_id[article_id])
         current = {i for i in ids if not by_id[i].get("background")}
         if not current or current & used:
             raise ValueError("missing_or_reused_current_evidence")
@@ -377,7 +379,8 @@ def generate_digest(snapshot, cfg, force_preview=False):
     fields = ("id", "title", "url", "source", "publisher", "time", "content_status", "content_note")
     def packed(a):
         return {**{k: a[k] for k in fields}, "text": a["text"][:cfg["llm_article_chars"]],
-                "text_truncated": len(a["text"]) > cfg["llm_article_chars"]}
+                "text_truncated": len(a["text"]) > cfg["llm_article_chars"],
+                **{k: a[k] for k in ("reader_url", "reader_title", "reader_content_kind", "source_language") if a.get(k)}}
     payload = {"beijing_time": snapshot["generated_at"], "window_start": snapshot["window_start"],
                "current_articles": [packed(a) for a in selected], "background_articles": [packed(a) for a in background]}
     base_url = os.environ.get(api.get("base_url_env", ""), "").strip() or api["base_url"]
@@ -437,7 +440,16 @@ def source_line(a):
     shown_time = a["time"].replace("T", " ")
     if a.get("time_precision") == "minute":
         shown_time = a["time"][:16].replace("T", " ") + a["time"][-6:]
-    return f"{a['source']} · {shown_time} · {STATUS[a['content_status']]}" + (" · 较早背景" if a.get("background") else "")
+    kind = {"chinese_report": "中文报道", "translation": "中文译文", "excerpt": "中文摘编",
+            "summary_only": "仅摘要", "english_original": "英文原文"}.get(a.get("reader_content_kind"), "") if a.get("reader_url") else "英文原文" if a.get("source_language") == "en" else ""
+    return f"{a['source']} · {shown_time} · {STATUS[a['content_status']]}" + (f" · {kind}" if kind else "") + (" · 较早背景" if a.get("background") else "")
+
+
+def reference_url(article):
+    target = article.get("reader_url") or article["url"]
+    if not http_url(target):
+        raise ValueError("invalid_reference_url")
+    return requests.utils.requote_uri(target)
 
 
 def markdown_link(title, url):
@@ -454,7 +466,7 @@ def numbered_paragraph(text, by_id, numbers, *, as_html=False):
     for part in re.split(r"(\[[AB]\d+\])", text):
         if re.fullmatch(r"\[[AB]\d+\]", part):
             article_id = part[1:-1]
-            url = by_id[article_id]["url"]
+            url = reference_url(by_id[article_id])
             label = f"[{numbers[article_id]}]"
             parts.append(f'<a class="cite" href="{html.escape(url, quote=True)}">{label}</a>' if as_html else markdown_link(label, url))
         else:
@@ -485,7 +497,7 @@ def render(snapshot, digest, state):
     date = snapshot["generated_at"][:10]
     title = f"主题日报 · {date}" if digest is not None else f"日报抓取预览 · {date}"
     window = f"北京时间 {snapshot['window_start'].replace('T', ' ')} — {snapshot['generated_at'].replace('T', ' ')}"
-    origin = "真实网络抓取" if snapshot["data_kind"] == "live_fetch" else "测试数据，仅用于验收"
+    origin = {"live_fetch": "真实网络抓取", "reader_material": "真实 Reader 材料与公开报道", "test_fixture": "测试数据，仅用于验收"}.get(snapshot["data_kind"], "已提供材料")
     md = [f"# {title}", "", window, "", f"> {markdown_text(state)}", f"> 数据：{origin}；链接去重后 {len(articles)} 条。", ""]
     chunks = [f'<header><p class="meta">本地 · 中文 · 主题整合</p><h1>{html.escape(title)}</h1><p class="meta">{html.escape(window)}</p><div class="banner">{html.escape(state)}<br><small>{origin} · 去重后 {len(articles)} 条</small></div></header>']
     if digest is not None:
@@ -508,8 +520,10 @@ def render(snapshot, digest, state):
             md += [f"{source_heading}：", ""]
             chunks.append(f'<p class="note">{source_heading}</p><ul class="sources">')
             for a in evidence:
-                md.append(f"- {markdown_link('[' + str(numbers[a['id']]) + '] ' + a['title'], a['url'])} — {source_line(a)}")
-                chunks.append(f'<li><a href="{html.escape(a["url"], quote=True)}">[{numbers[a["id"]]}] {html.escape(a["title"])}</a><br><small>{html.escape(source_line(a))}</small></li>')
+                target = reference_url(a)
+                reference_title = a.get("reader_title") or a["title"]
+                md.append(f"- {markdown_link('[' + str(numbers[a['id']]) + '] ' + reference_title, target)} — {source_line(a)}")
+                chunks.append(f'<li><a href="{html.escape(target, quote=True)}">[{numbers[a["id"]]}] {html.escape(reference_title)}</a><br><small>{html.escape(source_line(a))}</small></li>')
             md.append("")
             chunks.append("</ul></section>")
         if not digest["topics"]:
