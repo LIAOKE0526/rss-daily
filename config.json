@@ -1,0 +1,113 @@
+{
+  "window_hours": 48,
+  "request_timeout_seconds": 18,
+  "workers": 6,
+  "max_article_fetches": 80,
+  "llm_max_articles": 140,
+  "llm_article_chars": 4500,
+  "output_dir": "output",
+  "prompt_file": "prompts/daily.txt",
+  "api": {
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "key_env": "DEEPSEEK_API_KEY",
+    "base_url_env": "RSS_API_BASE_URL",
+    "model_env": "RSS_API_MODEL",
+    "timeout_seconds": 180,
+    "max_tokens": 6500,
+    "request_options": {"thinking": {"type": "disabled"}}
+  },
+  "feeds": [
+    {
+      "name": "BBC 中文",
+      "publisher": "BBC",
+      "url": "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "BBC 国际",
+      "publisher": "BBC",
+      "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "FT",
+      "publisher": "FT",
+      "url": "https://www.ft.com/rss/home/international",
+      "enabled": true,
+      "access": "summary_only",
+      "note": "付费媒体，仅使用公开 RSS 摘要"
+    },
+    {
+      "name": "知识分子",
+      "publisher": "知识分子",
+      "url": "https://www.zhishifenzi.com/rss",
+      "enabled": true,
+      "date_timezone_aliases": {
+        "CST": "+0800"
+      },
+      "note": "该源 CST 已据第一方文章日期核实为北京时间"
+    },
+    {
+      "name": "机核",
+      "publisher": "机核",
+      "url": "https://www.gcores.com/rss",
+      "enabled": true
+    },
+    {
+      "name": "机器之心",
+      "url": "https://www.jiqizhixin.com/rss",
+      "enabled": false,
+      "note": "实测重定向到数据服务页面，非公开 RSS；保留待手动更新"
+    },
+    {
+      "name": "财新",
+      "url": "https://www.caixin.com/rss/",
+      "enabled": false,
+      "access": "summary_only",
+      "note": "实测重定向到 404，待提供可用 RSS；不使用第三方付费正文代理"
+    },
+    {
+      "name": "财经",
+      "url": "https://www.caijing.com.cn/rss/",
+      "enabled": false,
+      "note": "实测 HTTP 404，待手动更新"
+    },
+    {
+      "name": "三联",
+      "url": "https://www.lifeweek.com.cn/rss",
+      "enabled": false,
+      "note": "实测 HTTP 404，待手动更新"
+    },
+    {
+      "name": "The Guardian 国际",
+      "publisher": "The Guardian",
+      "url": "https://www.theguardian.com/world/rss",
+      "enabled": true
+    },
+    {
+      "name": "The Verge",
+      "publisher": "The Verge",
+      "url": "https://www.theverge.com/rss/index.xml",
+      "enabled": true
+    },
+    {
+      "name": "量子位",
+      "publisher": "量子位",
+      "url": "https://www.qbitai.com/feed",
+      "enabled": true
+    },
+    {
+      "name": "爱范儿",
+      "publisher": "爱范儿",
+      "url": "https://www.ifanr.com/feed",
+      "enabled": true
+    },
+    {
+      "name": "Eurogamer",
+      "publisher": "Eurogamer",
+      "url": "https://www.eurogamer.net/feed",
+      "enabled": true
+    }
+  ]
+}

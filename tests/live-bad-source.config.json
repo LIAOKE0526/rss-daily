@@ -1,0 +1,35 @@
+{
+  "window_hours": 48,
+  "request_timeout_seconds": 18,
+  "workers": 6,
+  "max_article_fetches": 2,
+  "llm_max_articles": 140,
+  "llm_article_chars": 1800,
+  "output_dir": "tests/live-bad-source",
+  "prompt_file": "prompts/daily.txt",
+  "api": {
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-flash",
+    "key_env": "DEEPSEEK_API_KEY",
+    "base_url_env": "RSS_API_BASE_URL",
+    "model_env": "RSS_API_MODEL",
+    "timeout_seconds": 180,
+    "max_tokens": 6500
+  },
+  "feeds": [
+    {
+      "name": "BBC 中文",
+      "publisher": "BBC",
+      "url": "https://feeds.bbci.co.uk/zhongwen/trad/rss.xml",
+      "enabled": true
+    },
+    {
+      "name": "FT",
+      "publisher": "FT",
+      "url": "https://www.ft.com/rss/home/international",
+      "enabled": true,
+      "access": "summary_only",
+      "note": "付费媒体，仅使用公开 RSS 摘要"
+    }
+  ]
+}
