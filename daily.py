@@ -196,20 +196,25 @@ def fetch_feed(source, now, cfg):
             if not http_url(url):
                 report["invalid_link"] += 1
                 continue
-            summary = plain(entry.get("summary", ""))
-            content = max((plain(c.get("value", "")) for c in entry.get("content", [])), key=len, default="")
             restricted = source.get("access") == "summary_only"
+            only_summary = restricted or source.get("feed_content") == "summary_only"
+            summary_raw = (entry.get("summary_detail") or {}).get("value", "") if only_summary else entry.get("summary", "")
+            summary = plain(summary_raw)
+            content = "" if only_summary else max((plain(c.get("value", "")) for c in entry.get("content", [])), key=len, default="")
             item = {"title": plain(entry.get("title", "无标题")), "url": canonical_url(url),
                           "source": source["name"], "publisher": source.get("publisher", source["name"]),
                           "time": stamp.isoformat(), "time_basis": entry.get("time_basis", date_field),
                           "time_precision": entry.get("time_precision", "second"),
                           "published_raw": entry.get("published", ""), "updated_raw": entry.get("updated", ""),
-                          "summary": summary, "text": summary if restricted else content or summary,
+                          "summary": summary, "text": summary if only_summary else content or summary,
                           "content_status": "paywall" if restricted else "rss_excerpt" if content else "summary_only",
-                          "content_note": "来源配置仅使用公开 RSS 摘要" if restricted else "尚未获取公开网页正文",
+                          "content_note": ("来源配置仅使用公开 RSS 摘要" + ("；" + source["note"] if source.get("note") else "")) if only_summary else "尚未获取公开网页正文",
                           "fetch_article": not restricted and source.get("fetch_article", True),
+                          "fetch_image_page": source.get("fetch_image_page", True),
                           "background": False}
-            image_entry = {k: v for k, v in entry.items() if k != "content"} if restricted else entry
+            image_entry = {k: v for k, v in entry.items() if k != "content"} if only_summary else entry
+            if only_summary:
+                image_entry["summary"] = summary_raw
             images = rss_images(image_entry, item["url"])
             if images:
                 item["images"] = images
@@ -276,6 +281,9 @@ def add_page_images(item, page, source_page, *, paywall=False):
 
 def enrich_image_candidates(item, timeout):
     """Only called for explicitly selected articles; never downloads image binaries."""
+    if item.get("fetch_image_page") is False:
+        item["image_note"] = "来源配置禁止请求原文页，保留公开 RSS 图片候选"
+        return item
     try:
         data, final_url = fetch_bytes(item["url"], timeout)
         paywall = bool(PAYWALL.search(data.decode("utf-8", errors="replace")))

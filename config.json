@@ -166,6 +166,16 @@
       "format": "jiemian_html",
       "enabled": true,
       "note": "第一方栏目列表；相对时间仅在取得原文明确发布时间后使用，与其它界面栏目按同一媒体归并"
+    },
+    {
+      "name": "晚点LatePost（公众号·仅摘要）",
+      "publisher": "晚点LatePost",
+      "url": "https://wechat2rss.bestblogs.dev/feed/c442206ec9957f3c52f2f40300ca532079538b31.xml",
+      "enabled": true,
+      "feed_content": "summary_only",
+      "fetch_article": false,
+      "note": "BestBlogs公开发布的第三方公众号RSS；仅采用description，忽略encoded正文。时间来自RSS自报，原文可能需微信验证，未独立核实原站全文和发布时间。",
+      "fetch_image_page": false
     }
   ]
 }
