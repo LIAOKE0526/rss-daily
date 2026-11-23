@@ -48,17 +48,16 @@ python -m unittest discover -s tests -v
 
 ## 启动
 
-在 PowerShell 中运行：
+在 PowerShell 中进入仓库根目录后运行：
 
 ```powershell
-Set-Location D:\Workspace\rss-daily
 .\run.ps1 -Open
 ```
 
 如果 Windows 的执行策略拦截本地脚本，可以仅对这一次进程运行：
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File D:\Workspace\rss-daily\run.ps1 -Open
+powershell -NoProfile -ExecutionPolicy Bypass -File .\run.ps1 -Open
 ```
 
 首次启动会在这个目录创建 `.venv` 并安装 `requirements.txt`；原 Windows 本机已安装，新检出的环境仍需安装。后续运行复用环境。`-Preview` 始终只抓取、不调用 API。`-Open` 打开本次生成的成稿或预览。日常成功运行会更新 `latest.*` 和当天归档；首期编辑稿与固定材料分别保存在 `first_issue.json` 和 `examples/2026-11-23.articles.json`，不会被滚动抓取替换。
@@ -107,7 +106,7 @@ $env:RSS_API_MODEL = '你的模型名'
 
 直接编辑 `prompts/daily.txt`。当前按用户认可的“摘编、删减和整合”方式处理：中文尽量保留原句，删除重复和无关枝节，只作必要衔接；英文先选句再忠实译摘。复杂主题通常 450–750 字，不为降重做同义改写，不添加自己的评论、趋势判断或建议，也不逐一介绍媒体的报道方式。证据 ID 内部保留，显示为 `[1]`、`[2]` 等数字引用，逐一对应原文链接。摘要和付费材料只使用已经获得的公开文字。前三版保留于 `revisions/v1/` 至 `revisions/v3/`，当前审阅稿见 `output/review-v4.html`。
 
-本期用户明确将 `D:/Workspace/rss-daily/examples/2026-11-23.articles.json` 内的原文提供为编辑材料；第四版使用这批固定材料，黎曼段沿用用户已认可的摘编正文。这项材料说明针对这个快照，不把以后新抓取的内容自动当作用户已经提供的材料。若模型再次因版权或引用规则无法完成摘编，prompt 要求返回具体受限材料和原因，程序明确显示“版权引用限制”，保留已有成稿及 RSS，不静默改为同义改写。用户可在获知具体情况后提供适用的本地材料再继续。
+本期用户明确将 `examples/2026-11-23.articles.json` 内的原文提供为编辑材料；第四版使用这批固定材料，黎曼段沿用用户已认可的摘编正文。这项材料说明针对这个快照，不把以后新抓取的内容自动当作用户已经提供的材料。若模型再次因版权或引用规则无法完成摘编，prompt 要求返回具体受限材料和原因，程序明确显示“版权引用限制”，保留已有成稿及 RSS，不静默改为同义改写。用户可在获知具体情况后提供适用的本地材料再继续。
 
 `max_article_fetches` 默认 80，按媒体轮流选择公开网页提取，其余仍保留 RSS 材料；`llm_max_articles` 默认 140，均衡选取媒体以避免高产源挤占输入；`llm_article_chars` 限制每篇输入片段。这些值可在配置中改，所有窗口内条目的元数据和已有 RSS 内容仍保存于快照。候选关键词分组仅用于缺少 API 时浏览材料，明确标为待确认，不当作同事件合并结论。
 
