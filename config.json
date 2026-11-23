@@ -220,6 +220,54 @@
       "feed_content": "summary_only",
       "fetch_article": false,
       "note": "英文美股市场和个人财经；匿名正文样本返回 HTTP 401，使用公开 RSS 摘要"
+    },
+    {
+      "name": "Nuclear Fusion 最新论文",
+      "publisher": "IOP Publishing / IAEA",
+      "url": "https://iopscience.iop.org/journal/rss/0029-5515",
+      "enabled": true,
+      "feed_content": "summary_only",
+      "note": "期刊官方 RSS，核聚变及相关诊断研究；RSS 为论文摘要，公开正文按现有流程尝试提取，不能把摘要当作已读全文"
+    },
+    {
+      "name": "arXiv 等离子体与仪器探测",
+      "publisher": "arXiv",
+      "url": "https://rss.arxiv.org/rss/physics.plasm-ph+physics.ins-det",
+      "enabled": true,
+      "feed_content": "summary_only",
+      "fetch_article": false,
+      "note": "官方合并分类 RSS：等离子体物理、仪器与探测器；覆盖聚变、核探测与诊断相关研究，也包含更广仪器研究。保留论文摘要，非人工精选，不能仅凭 arXiv 收录认定已经同行评审"
+    },
+    {
+      "name": "Nature Machine Intelligence",
+      "publisher": "Nature Portfolio",
+      "url": "https://www.nature.com/natmachintell.rss",
+      "enabled": true,
+      "fetch_article": false,
+      "note": "期刊官方 RSS，AI、机器学习与机器人研究及评论。公开提要位于 RSS content 中，保留默认内容读取；属于摘要，不代表已读论文全文，入选后可再核对公开原文"
+    },
+    {
+      "name": "Journal of Instrumentation",
+      "publisher": "IOP Publishing / SISSA",
+      "url": "https://iopscience.iop.org/journal/rss/1748-0221",
+      "enabled": true,
+      "note": "JINST 期刊官方 RSS，粒子与核探测器、诊断仪器、读出和重建研究；RSS 主要提供论文摘要，公开正文按现有流程尝试提取"
+    },
+    {
+      "name": "IEEE TCAD",
+      "publisher": "IEEE",
+      "url": "https://ieeexplore.ieee.org/rss/TOC43.XML",
+      "enabled": true,
+      "note": "IEEE Transactions on Computer-Aided Design of Integrated Circuits and Systems 官方月刊目录，覆盖 FPGA、硬件设计与设计自动化；RSS 为摘要及目录项，公开正文按现有流程尝试提取"
+    },
+    {
+      "name": "arXiv AI、硬件与信号处理",
+      "publisher": "arXiv",
+      "url": "https://rss.arxiv.org/rss/cs.AR+eess.SP+cs.LG",
+      "enabled": true,
+      "feed_content": "summary_only",
+      "fetch_article": false,
+      "note": "官方合并分类 RSS：计算机体系结构、信号处理、机器学习；覆盖 FPGA、AI 加速与仪器信号分析交叉。保留论文摘要和原文入口，时间为 arXiv 公告时间，非人工精选或同行评审保证"
     }
   ]
 }

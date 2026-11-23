@@ -24,6 +24,12 @@
       <outline text="Comic Natalie" title="Comic Natalie" type="rss" xmlUrl="https://natalie.mu/comic/feed/news" />
       <outline text="CNBC 美国要闻" title="CNBC 美国要闻" type="rss" xmlUrl="https://www.cnbc.com/id/100003114/device/rss/rss.html" />
       <outline text="MarketWatch" title="MarketWatch" type="rss" xmlUrl="https://feeds.content.dowjones.io/public/rss/mw_topstories" />
+      <outline text="Nuclear Fusion 最新论文" title="Nuclear Fusion 最新论文" type="rss" xmlUrl="https://iopscience.iop.org/journal/rss/0029-5515" />
+      <outline text="arXiv 等离子体与仪器探测" title="arXiv 等离子体与仪器探测" type="rss" xmlUrl="https://rss.arxiv.org/rss/physics.plasm-ph+physics.ins-det" />
+      <outline text="Nature Machine Intelligence" title="Nature Machine Intelligence" type="rss" xmlUrl="https://www.nature.com/natmachintell.rss" />
+      <outline text="Journal of Instrumentation" title="Journal of Instrumentation" type="rss" xmlUrl="https://iopscience.iop.org/journal/rss/1748-0221" />
+      <outline text="IEEE TCAD" title="IEEE TCAD" type="rss" xmlUrl="https://ieeexplore.ieee.org/rss/TOC43.XML" />
+      <outline text="arXiv AI、硬件与信号处理" title="arXiv AI、硬件与信号处理" type="rss" xmlUrl="https://rss.arxiv.org/rss/cs.AR+eess.SP+cs.LG" />
       <outline text="界面新闻（综合）" title="界面新闻（综合）" type="rss" xmlUrl="https://a.jiemian.com/index.php?m=article&amp;a=rss" description="仅供RSS阅读器订阅；综合RSS为有限滚动列表，不代表五栏目近48小时完整报道。项目仍按config.json采集商业、财经、中国、天下、科技五个栏目。" />
     </outline>
   </body>

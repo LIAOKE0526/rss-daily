@@ -103,6 +103,8 @@ $env:RSS_API_MODEL = '你的模型名'
 
 动漫/漫画/二次元新增 Anime News Network（英文）和 Comic Natalie（日文）；美股泛读新增 CNBC 美国要闻和 MarketWatch（英文）。MarketWatch 使用公开 RSS 摘要；其他来源按已有规则提取可访问正文。`subscriptions.opml` 同步包含这些 RSS/Atom 订阅，不改变 Reader 已有订阅。
 
+科研源包括 Nuclear Fusion、Nature Machine Intelligence、Journal of Instrumentation（JINST）、IEEE TCAD，以及 arXiv 的两组合并分类：`physics.plasm-ph+physics.ins-det`（等离子体、仪器与探测器）和 `cs.AR+eess.SP+cs.LG`（硬件架构、信号处理、机器学习）。这些源覆盖核聚变、核诊断、FPGA、AI 及其交叉研究。arXiv 是分类论文更新，不能视为人工精选或同行评审认证；科研 RSS 主要提供摘要，不能据此声称已读全文。Nature Machine Intelligence 的提要位于 RSS `content`，按默认方式保留，不将该字段自动认作全文。期刊目录可能按批次或月度更新，近 48 小时没有条目不等于订阅失败。
+
 已按后续要求新增虎嗅、IT之家官方 RSS，以及界面新闻的商业、财经、中国、天下、科技五个第一方栏目。界面栏目使用 `format: "jiemian_html"` 读取官网列表，不依赖第三方全文镜像，统一 `publisher: "界面新闻"`。列表的“今天/昨天/月日”按源站响应日期解释，精度保留到分钟；“几分钟前”等不可靠相对时间仅在取得原文明确发布时间后使用。RSS 和栏目页返回条数受源站限制，48 小时筛选不保证穷尽媒体在该窗口的全部文章。
 
 ## 入选新闻的图片候选
